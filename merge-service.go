@@ -44,3 +44,40 @@ func Merge(c net.Conn, s State, m Merger) (Serde, error) {
 
 	return res, nil
 }
+
+func DeltaMerge(c *net.Conn, s State, ds DeltaState) (Serde, error) {
+	zd := ds.ZeroDelta()
+	out := make([]byte)
+
+	rf := func(d Serde) {
+		out = d.Ser()
+	}
+
+	s.Read(rf)
+
+	meta, e := Xchg(c, out, zd)
+
+	var diff Serde
+
+	rf1 := func(d Serde) {
+		diff = ds.Diff(d, meta)
+	}
+
+	if e != nil {
+		return meta, e
+	}
+	s.Read(rf1)
+
+	remote, e1 := Xchg(c, diff.Ser(), ds.Zero())
+
+	complete := func(d Serde) Serde {
+		return ds.Merge(d, remote)
+	}
+
+	if e1 != nil {
+		return
+	}
+
+	result := s.Write(complete)
+
+}
